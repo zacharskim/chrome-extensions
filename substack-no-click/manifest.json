@@ -1,0 +1,21 @@
+{
+  "name": "Substack No Click",
+  "description": "Chrome extension that automatically expands all the comments on a Substack article",
+  "version": "1.0",
+  "manifest_version": 3,
+  "icons": {
+    "512": "images/icon.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.substack.com/p/*"],
+      "js": ["scripts/content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_icon": {
+      "512": "images/icon.png"
+    }
+  }
+}
