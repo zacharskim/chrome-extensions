@@ -1,0 +1,24 @@
+{
+  "name": "Mini Minus One",
+  "description": "Chrome extension that let's you be the most competitive crossword solver of all your friends",
+  "version": "1.0",
+  "action": {
+    "default_popup": "./popup/popup.html",
+
+    "default_icon": {
+      "512": "images/feathers-icon.png"
+    }
+  },
+  "manifest_version": 3,
+  "icons": {
+    "512": "images/feathers-icon.png"
+  },
+  "permissions": ["storage", "tabs"],
+  "content_scripts": [
+    {
+      "matches": ["https://www.nytimes.com/crosswords/game/mini"],
+      "js": ["scripts/content.js"],
+      "run_at": "document_end"
+    }
+  ]
+}
