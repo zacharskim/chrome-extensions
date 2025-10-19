@@ -21,8 +21,8 @@ function convertTextToSecondsNum(timerText) {
 
 // Generate a random commit ID (similar to NYT's format like "wqb6or")
 function generateCommitID() {
-  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
   for (let i = 0; i < 6; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
@@ -32,22 +32,24 @@ function generateCommitID() {
 // Submit the puzzle with a PUT request
 async function submitPuzzle(puzzleData, winningTime) {
   const cells = puzzleData.body[0].cells;
-  const puzzleID = puzzleData.body[0].id;
+  const puzzleID = puzzleData.id;
+  console.log(puzzleData.body[0], "ahh");
 
   const now = Math.floor(Date.now() / 1000);
   const openedTime = now - winningTime - 10; // Pretend we opened it a bit before we started
   const solvedTime = now;
 
   // Build the board cells array with timestamps
+  // Timestamps should be relative to when the puzzle was opened, not absolute unix time
   const boardCells = cells.map((cell, index) => {
     if (!cell.answer) {
       return { blank: true };
     }
-    // Spread out the timestamps across the solving time
-    const timestampOffset = Math.floor((winningTime * index) / cells.length);
+    // Spread out the timestamps across the solving time (relative seconds)
+    const relativeTimestamp = Math.floor((winningTime * index) / cells.length);
     return {
       guess: cell.answer,
-      timestamp: openedTime + timestampOffset,
+      timestamp: relativeTimestamp, // Should be like 4, 5, 6... not unix timestamp
     };
   });
 
@@ -58,7 +60,7 @@ async function submitPuzzle(puzzleData, winningTime) {
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.includes('localforage/') && key.includes('#')) {
+      if (key && key.includes("localforage/") && key.includes("#")) {
         // Extract userID from key like "localforage/93997391#pendingCommits"
         const match = key.match(/localforage\/(\d+)#/);
         if (match) {
@@ -75,7 +77,7 @@ async function submitPuzzle(puzzleData, winningTime) {
   // Method 2: Try nyt-a as fallback
   if (!userID) {
     try {
-      const nytData = localStorage.getItem('nyt-a');
+      const nytData = localStorage.getItem("nyt-a");
       if (nytData) {
         const parsed = JSON.parse(nytData);
         userID = parsed?.id;
@@ -96,39 +98,46 @@ async function submitPuzzle(puzzleData, winningTime) {
   const deviceID = "dum4n6-web"; // This might need to be retrieved from somewhere
 
   const payload = {
-    commits: [{
-      deviceID: deviceID,
-      puzzleID: puzzleID,
-      userID: userID,
-      autocheckEnabled: false,
-      board: {
-        cells: boardCells
+    commits: [
+      {
+        autocheckEnabled: false,
+        board: {
+          cells: boardCells,
+        },
+        commitID: generateCommitID(),
+        deviceID: deviceID,
+        firsts: {
+          checked: openedTime,
+          cleared: openedTime,
+          opened: openedTime,
+          solved: solvedTime,
+        },
+        minGuessTime: openedTime,
+        puzzleID: puzzleID,
+        reset: false,
+        solved: true,
+        timerDiff: winningTime,
+        timestamp: now,
+        userID: userID,
       },
-      commitID: generateCommitID(),
-      firsts: {
-        opened: openedTime,
-        solved: solvedTime
-      },
-      minGuessTime: openedTime,
-      reset: false,
-      solved: true,
-      timerDiff: winningTime,
-      timestamp: now
-    }],
-    now: now
+    ],
+    now: now,
   };
 
   console.log("Submitting puzzle with payload:", payload);
 
   try {
-    const response = await fetch('https://www.nytimes.com/svc/crosswords/v6/game.json', {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
+    const response = await fetch(
+      "https://www.nytimes.com/svc/crosswords/v6/game.json",
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include", // Include cookies for authentication
+        body: JSON.stringify(payload),
       },
-      credentials: 'include', // Include cookies for authentication
-      body: JSON.stringify(payload)
-    });
+    );
 
     const result = await response.json();
     console.log("✅ Submit response:", result);
@@ -227,7 +236,9 @@ function fillCrossword(puzzleData, skipLast = false) {
 
     // Skip the last cell if requested
     if (skipLast && index === lastCellIndex) {
-      console.log(`⏭️ Skipping last cell ${index} (answer: "${cell.answer}") - will fill before submit`);
+      console.log(
+        `⏭️ Skipping last cell ${index} (answer: "${cell.answer}") - will fill before submit`,
+      );
       return;
     }
 
@@ -261,7 +272,11 @@ function fillCrossword(puzzleData, skipLast = false) {
     console.log(`Set cell ${index} to: ${cell.answer}`);
   });
 
-  console.log(skipLast ? "✅ Crossword filled (except last cell)!" : "✅ Crossword filled!");
+  console.log(
+    skipLast
+      ? "✅ Crossword filled (except last cell)!"
+      : "✅ Crossword filled!",
+  );
   return { success: true, lastCellIndex };
 }
 
