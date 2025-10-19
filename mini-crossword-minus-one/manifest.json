@@ -13,12 +13,13 @@
   "icons": {
     "512": "images/feathers-icon.png"
   },
-  "permissions": ["storage", "tabs"],
+  "permissions": ["storage", "tabs", "webRequest"],
+  "host_permissions": ["*://*.nytimes.com/*"],
   "content_scripts": [
     {
-      "matches": ["https://www.nytimes.com/crosswords/game/mini"],
+      "matches": ["https://www.nytimes.com/crosswords/game/mini/*"],
       "js": ["scripts/content.js"],
-      "run_at": "document_end"
+      "run_at": "document_start"
     }
   ]
 }

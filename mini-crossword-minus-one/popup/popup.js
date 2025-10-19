@@ -69,12 +69,12 @@ function handleMessageResponse(response) {
   } else {
     console.log("Message sent successfully:", response);
 
-    // Clear the saved value
+    // Clear the saved value so it doesn't persist
     chrome.storage.local.remove("targetTime");
 
     // Close after a short delay
     setTimeout(() => {
-      // window.close();
+      window.close();
     }, 800);
   }
 }
