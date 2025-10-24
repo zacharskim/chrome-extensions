@@ -1,2 +1,5 @@
 ./substack-no-click/.claude/settings.local.json
 ./.claude
+.claude/settings.local.json
+mini-crossword-minus-one/.claude/settings.json
+substack-no-click/.claude/settings.local.json
