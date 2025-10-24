@@ -55,27 +55,42 @@ function showLoadingState(targetTime) {
     }
   }, 350);
 
-  // Store interval ID so we can clear it later
-  return interval;
+  // Store interval ID globally so we can clear it when we're done
+  window.loadingInterval = interval;
 }
 
 function handleMessageResponse(response) {
-  const submitBtn = document.getElementById("submitBtn");
-  const input = document.getElementById("sampleSecond");
-
   if (chrome.runtime.lastError) {
     console.error("Error sending message:", chrome.runtime.lastError.message);
     alert("Error: " + chrome.runtime.lastError.message);
   } else {
-    console.log("Message sent successfully:", response);
-
     // Clear the saved value so it doesn't persist
     chrome.storage.local.remove("targetTime");
 
-    // Close after a short delay
-    setTimeout(() => {
-      window.close();
-    }, 800);
+    // If we got timer data from content script, calculate the close delay
+    if (response && response.currentTimerSeconds !== undefined) {
+      const winningTime = response.winningTime;
+      const elapsedSeconds = response.currentTimerSeconds;
+
+      // Calculate close delay: wait until (winningTime - 1 second buffer) has elapsed total
+      const targetElapsedTime = winningTime - 1;
+      const closeDelay = Math.max(
+        0,
+        (targetElapsedTime - elapsedSeconds) * 1000,
+      );
+
+      // Cancel any existing timeout and set new one based on actual timer
+      if (window.closeTimeout) {
+        clearTimeout(window.closeTimeout);
+      }
+
+      window.closeTimeout = setTimeout(() => {
+        if (window.loadingInterval) {
+          clearInterval(window.loadingInterval);
+        }
+        window.close();
+      }, closeDelay);
+    }
   }
 }
 

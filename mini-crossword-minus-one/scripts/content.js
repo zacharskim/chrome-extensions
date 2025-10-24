@@ -202,8 +202,47 @@ async function getPuzzleData() {
   }
 }
 
+// Type a letter into a cell by clicking it and dispatching a keyboard event
+async function typeLetterInCell(cellIndex, letter) {
+  const cellRect = document.getElementById(`cell-id-${cellIndex}`);
+  if (!cellRect) {
+    console.warn(`Could not find cell-id-${cellIndex}`);
+    return false;
+  }
+
+  // Focus the rect element (it has tabindex)
+  cellRect.focus();
+
+  // Dispatch a click event on the rect to trigger React's handleClick
+  const clickEvent = new MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+    view: window,
+  });
+  cellRect.dispatchEvent(clickEvent);
+
+  // Give React a moment to handle the click and mark the cell as focused
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  // Dispatch keypress event to trigger React's input handler
+  const keypressEvent = new KeyboardEvent("keypress", {
+    key: letter.toUpperCase(),
+    code: `Key${letter.toUpperCase()}`,
+    keyCode: letter.charCodeAt(0),
+    which: letter.charCodeAt(0),
+    bubbles: true,
+    cancelable: true,
+    charCode: letter.charCodeAt(0),
+  });
+
+  cellRect.dispatchEvent(keypressEvent);
+
+  console.log(`Typed "${letter}" in cell ${cellIndex}`);
+  return true;
+}
+
 // Auto-fill the crossword with answers from puzzle data
-function fillCrossword(puzzleData, skipLast = false) {
+async function fillCrossword(puzzleData, skipLast = false) {
   if (
     !puzzleData ||
     !puzzleData.body ||
@@ -228,10 +267,13 @@ function fillCrossword(puzzleData, skipLast = false) {
 
   console.log(`Last non-empty cell index: ${lastCellIndex}`);
 
-  cells.forEach((cell, index) => {
+  // Fill cells one by one
+  for (let index = 0; index < cells.length; index++) {
+    const cell = cells[index];
+
     // Skip empty cells (blocks)
     if (!cell.answer) {
-      return;
+      continue;
     }
 
     // Skip the last cell if requested
@@ -239,38 +281,15 @@ function fillCrossword(puzzleData, skipLast = false) {
       console.log(
         `⏭️ Skipping last cell ${index} (answer: "${cell.answer}") - will fill before submit`,
       );
-      return;
+      continue;
     }
 
-    // Find the corresponding cell in the DOM by ID
-    const cellRect = document.getElementById(`cell-id-${index}`);
-    if (!cellRect) {
-      console.warn(`Could not find cell-id-${index}`);
-      return;
-    }
+    // Type the letter into the cell
+    await typeLetterInCell(index, cell.answer);
 
-    // Find the parent <g> element
-    const cellGroup = cellRect.closest("g.xwd__cell");
-    if (!cellGroup) {
-      console.warn(`Could not find parent group for cell ${index}`);
-      return;
-    }
-
-    // Find the text element for the answer (second text element with larger font)
-    const textElements = cellGroup.querySelectorAll(
-      'text[text-anchor="middle"]',
-    );
-    if (textElements.length === 0) {
-      console.warn(`Could not find text element for cell ${index}`);
-      return;
-    }
-
-    const answerTextElement = textElements[0];
-
-    // Set the answer
-    answerTextElement.textContent = cell.answer;
-    console.log(`Set cell ${index} to: ${cell.answer}`);
-  });
+    // Small delay between cells to let React process
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  }
 
   console.log(
     skipLast
@@ -281,7 +300,7 @@ function fillCrossword(puzzleData, skipLast = false) {
 }
 
 // Fill just the last cell
-function fillLastCell(puzzleData, cellIndex) {
+async function fillLastCell(puzzleData, cellIndex) {
   const cells = puzzleData.body[0].cells;
   const cell = cells[cellIndex];
 
@@ -290,17 +309,8 @@ function fillLastCell(puzzleData, cellIndex) {
     return false;
   }
 
-  const cellRect = document.getElementById(`cell-id-${cellIndex}`);
-  if (!cellRect) {
-    console.error(`Could not find cell-id-${cellIndex}`);
-    return false;
-  }
-
-  const cellGroup = cellRect.closest("g.xwd__cell");
-  const textElements = cellGroup.querySelectorAll('text[text-anchor="middle"]');
-  const answerTextElement = textElements[0];
-
-  answerTextElement.textContent = cell.answer;
+  // Type the letter into the cell
+  await typeLetterInCell(cellIndex, cell.answer);
   console.log(`✅ Filled last cell ${cellIndex} with: ${cell.answer}`);
   return true;
 }
@@ -344,53 +354,91 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
         if (puzzleData) {
           console.log("Got puzzle data! Now auto-solving...");
 
-          // Fill in the crossword (but skip the last cell)
-          const result = fillCrossword(puzzleData, true);
+          // Fill in the crossword (but skip the last cell) - AWAIT this!
+          fillCrossword(puzzleData, true)
+            .then((result) => {
+              // Get current timer value to send back to popup
+              const timerElement = document.querySelector(".timer-count");
+              let currentTimerSeconds = 0;
+              if (timerElement) {
+                const timerText = timerElement.textContent.trim();
+                currentTimerSeconds = convertTextToSecondsNum(timerText);
+              }
 
-          // Send response immediately
-          sendResponse({
-            success: result.success,
-            winningTime: winningTime,
-          });
+              // Send response after fill completes, including current timer value
+              sendResponse({
+                success: result.success,
+                winningTime: winningTime,
+                currentTimerSeconds: currentTimerSeconds,
+              });
 
-          if (result.success) {
-            console.log(
-              "🎉 Crossword filled (except last)! Waiting for timer to reach:",
-              winningTime,
-            );
+              if (result.success) {
+                console.log(
+                  "Crossword filled (except last)! Waiting for timer to reach:",
+                  winningTime,
+                );
 
-            // Watch the timer and submit when it reaches winningTime
-            const timerElement = document.querySelector(".timer-count");
+                // Watch the timer and submit when it reaches winningTime
+                const timerElement = document.querySelector(".timer-count");
 
-            if (!timerElement) {
-              console.error("Could not find timer element");
-              return;
-            }
+                if (!timerElement) {
+                  console.error("Could not find timer element");
+                  return;
+                }
 
-            // Poll the timer every 100ms
-            const timerInterval = setInterval(() => {
-              const currentTimeText = timerElement.textContent;
-              const currentSeconds = convertTextToSecondsNum(currentTimeText);
+                // Poll the timer every 100ms
+                const timerInterval = setInterval(() => {
+                  const currentTimeText = timerElement.textContent;
+                  const currentSeconds =
+                    convertTextToSecondsNum(currentTimeText);
 
-              console.log(
-                `Timer: ${currentTimeText} (${currentSeconds}s) | Target: ${winningTime}s`,
-              );
+                  console.log(
+                    `Timer: ${currentTimeText} (${currentSeconds}s) | Target: ${winningTime}s`,
+                  );
 
-              if (currentSeconds >= winningTime) {
-                clearInterval(timerInterval);
-                console.log("🎯 Target time reached! Filling last cell...");
+                  if (currentSeconds >= winningTime) {
+                    clearInterval(timerInterval);
+                    console.log("🎯 Target time reached! Filling last cell...");
 
-                // Fill the last cell now
-                fillLastCell(puzzleData, result.lastCellIndex);
-
-                // Wait a tiny bit then send PUT request
-                setTimeout(() => {
-                  console.log("📤 Sending PUT request...");
-                  submitPuzzle(puzzleData, winningTime);
+                    // Fill the last cell now (async, so we need to wait)
+                    console.log(
+                      "About to fill last cell, index:",
+                      result.lastCellIndex,
+                    );
+                    fillLastCell(puzzleData, result.lastCellIndex)
+                      .then(() => {
+                        console.log("✅ Last cell filled!");
+                        // Wait a tiny bit then send PUT request
+                        setTimeout(() => {
+                          console.log("📤 Sending PUT request...");
+                          submitPuzzle(puzzleData, winningTime).then(
+                            (submitResult) => {
+                              console.log(
+                                "✅ Puzzle submitted! Telling popup to close...",
+                              );
+                              // Send message to popup to close itself
+                              chrome.runtime.sendMessage({
+                                action: "puzzleSubmitted",
+                                result: submitResult,
+                              });
+                            },
+                          );
+                        }, 100);
+                      })
+                      .catch((err) => {
+                        console.error("❌ Error filling last cell:", err);
+                      });
+                  }
                 }, 100);
               }
-            }, 100);
-          }
+            })
+            .catch((err) => {
+              console.error("❌ Error filling crossword:", err);
+              sendResponse({
+                success: false,
+                error: "Error filling crossword: " + err.message,
+              });
+            });
         } else {
           sendResponse({
             success: false,
